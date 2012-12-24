@@ -7,43 +7,190 @@
 //
 
 #import "HJBAppDelegate.h"
+#import <CoreData/CoreData.h>
+
+@interface HJBFoo : NSManagedObject
+
+@property (nonatomic, retain) NSString *name;
+@property (nonatomic, retain) NSNumber *show;
+
+@end
+
+@interface HJBAppDelegate () <NSFetchedResultsControllerDelegate>
+
+@property (nonatomic, strong) NSPersistentStoreCoordinator *persistentStoreCoordinator;
+@property (nonatomic, strong) NSManagedObjectContext *initialManagedObjectContext;
+@property (nonatomic, strong) NSManagedObjectContext *fetchedResultsControllerManagedObjectContext;
+@property (nonatomic, strong) NSFetchedResultsController *fetchedResultsController;
+
+@end
 
 @implementation HJBAppDelegate
+
+#pragma mark - UIApplicationDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-    // Override point for customization after application launch.
     self.window.backgroundColor = [UIColor whiteColor];
+    self.window.rootViewController = [UIViewController new];
+    
+    NSAttributeDescription *nameAttributeDescription = [NSAttributeDescription new];
+    [nameAttributeDescription setAttributeType:NSStringAttributeType];
+    [nameAttributeDescription setIndexed:NO];
+    [nameAttributeDescription setOptional:NO];
+    [nameAttributeDescription setName:@"name"];
+    
+    NSAttributeDescription *showAttributeDescription = [NSAttributeDescription new];
+    [showAttributeDescription setAttributeType:NSBooleanAttributeType];
+    [showAttributeDescription setIndexed:YES];
+    [showAttributeDescription setOptional:NO];
+    [showAttributeDescription setName:@"show"];
+    
+    NSEntityDescription *fooEntityDescription = [NSEntityDescription new];
+    [fooEntityDescription setManagedObjectClassName:@"HJBFoo"];
+    [fooEntityDescription setName:@"HJBFoo"];
+    [fooEntityDescription setProperties:@[
+     nameAttributeDescription,
+     showAttributeDescription,
+     ]];
+    
+    NSManagedObjectModel *managedObjectModel = [NSManagedObjectModel new];
+    [managedObjectModel setEntities:@[
+     fooEntityDescription,
+     ]];
+    
+    self.persistentStoreCoordinator = [[NSPersistentStoreCoordinator alloc] initWithManagedObjectModel:managedObjectModel];
+    NSError *error = nil;
+    if ([self.persistentStoreCoordinator addPersistentStoreWithType:NSInMemoryStoreType
+                                                      configuration:nil
+                                                                URL:nil
+                                                            options:nil
+                                                              error:&error]) {
+        self.initialManagedObjectContext = [NSManagedObjectContext new];
+        [self.initialManagedObjectContext setPersistentStoreCoordinator:self.persistentStoreCoordinator];
+        
+        HJBFoo *foo1 = [NSEntityDescription insertNewObjectForEntityForName:@"HJBFoo"
+                                                     inManagedObjectContext:self.initialManagedObjectContext];
+        foo1.name = @"1";
+        foo1.show = @YES;
+        
+        HJBFoo *foo2 = [NSEntityDescription insertNewObjectForEntityForName:@"HJBFoo"
+                                                     inManagedObjectContext:self.initialManagedObjectContext];
+        foo2.name = @"2";
+        foo2.show = @NO;
+        
+        error = nil;
+        if ([self.initialManagedObjectContext save:&error]) {
+            NSFetchRequest *fetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"HJBFoo"];
+            [fetchRequest setReturnsObjectsAsFaults:NO];
+            
+            error = nil;
+            NSArray *initialFoos = [self.initialManagedObjectContext executeFetchRequest:fetchRequest
+                                                                                   error:&error];
+            if (initialFoos) {
+                NSLog(@"Initial: %@", initialFoos);
+                
+                self.fetchedResultsControllerManagedObjectContext = [NSManagedObjectContext new];
+                [self.fetchedResultsControllerManagedObjectContext setPersistentStoreCoordinator:self.persistentStoreCoordinator];
+                
+                NSFetchRequest *shownFetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"HJBFoo"];
+                [shownFetchRequest setPredicate:[NSPredicate predicateWithFormat:@"show == YES"]];
+                [shownFetchRequest setSortDescriptors:@[
+                 [NSSortDescriptor sortDescriptorWithKey:@"name"
+                                               ascending:YES],
+                 ]];
+                
+                self.fetchedResultsController = [[NSFetchedResultsController alloc] initWithFetchRequest:shownFetchRequest
+                                                                                    managedObjectContext:self.fetchedResultsControllerManagedObjectContext
+                                                                                      sectionNameKeyPath:nil
+                                                                                               cacheName:nil];
+                self.fetchedResultsController.delegate = self;
+                error = nil;
+                if ([self.fetchedResultsController performFetch:&error]) {
+                    NSLog(@"Initial fetchedObjects: %@", [self.fetchedResultsController fetchedObjects]);
+                    
+                    [[NSNotificationCenter defaultCenter] addObserver:self
+                                                             selector:@selector(managedObjectContextDidSave:)
+                                                                 name:NSManagedObjectContextDidSaveNotification
+                                                               object:nil];
+                    [[NSNotificationCenter defaultCenter] addObserver:self
+                                                             selector:@selector(managedObjectContext2ObjectsDidChange:)
+                                                                 name:NSManagedObjectContextObjectsDidChangeNotification
+                                                               object:self.fetchedResultsControllerManagedObjectContext];
+                    
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.5 * NSEC_PER_SEC),
+                                   dispatch_get_main_queue(),
+                                   ^(void){
+                                       NSManagedObjectContext *managedObjectContext3 = [NSManagedObjectContext new];
+                                       [managedObjectContext3 setPersistentStoreCoordinator:self.persistentStoreCoordinator];
+                                       
+                                       NSFetchRequest *foo2FetchRequest = [NSFetchRequest fetchRequestWithEntityName:@"HJBFoo"];
+                                       [foo2FetchRequest setFetchLimit:1];
+                                       [foo2FetchRequest setPredicate:[NSPredicate predicateWithFormat:@"name == %@",
+                                                                       @"2"]];
+                                       NSError *editingError = nil;
+                                       NSArray *editingFoos = [managedObjectContext3 executeFetchRequest:foo2FetchRequest
+                                                                                                   error:&editingError];
+                                       if (editingFoos) {
+                                           HJBFoo *editingFoo2 = [editingFoos objectAtIndex:0];
+                                           editingFoo2.show = @YES;
+                                           
+                                           editingError = nil;
+                                           if ([managedObjectContext3 save:&editingError]) {
+                                               NSLog(@"Save succeeded. Expected (in order) managedObjectContextDidSave, controllerDidChangeContent, managedObjectContext2ObjectsDidChange");
+                                           } else {
+                                               NSLog(@"Editing save failed: %@ %@", [error localizedDescription], [error userInfo]);
+                                           }
+                                       } else {
+                                           NSLog(@"Editing fetch failed: %@ %@", [error localizedDescription], [error userInfo]);
+                                       }
+                                       
+                                   });
+                } else {
+                    NSLog(@"Failed initial fetch: %@ %@", [error localizedDescription], [error userInfo]);
+                }
+            } else {
+                NSLog(@"Failed to performFetch: %@ %@", [error localizedDescription], [error userInfo]);
+            }
+        } else {
+            NSLog(@"Failed to save initial state: %@ %@", [error localizedDescription], [error userInfo]);
+        }
+    } else {
+        NSLog(@"Failed to add persistent store: %@ %@", [error localizedDescription], [error userInfo]);
+    }
+    
     [self.window makeKeyAndVisible];
     return YES;
 }
 
-- (void)applicationWillResignActive:(UIApplication *)application
-{
-    // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-    // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
+#pragma mark - NSFetchedResultsControllerDelegate
+
+- (void)controllerDidChangeContent:(NSFetchedResultsController *)controller {
+    NSLog(@"controllerDidChangeContent: %@",
+          [self.fetchedResultsController fetchedObjects]);
 }
 
-- (void)applicationDidEnterBackground:(UIApplication *)application
-{
-    // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later. 
-    // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+#pragma mark - notifications
+
+- (void)managedObjectContextDidSave:(NSNotification *)notification {
+    NSManagedObjectContext *managedObjectContext = [notification object];
+    if (([managedObjectContext persistentStoreCoordinator] == self.persistentStoreCoordinator) &&
+        (managedObjectContext != self.fetchedResultsControllerManagedObjectContext)) {
+        NSLog(@"managedObjectContextDidSave: %@", notification);
+        [self.fetchedResultsControllerManagedObjectContext mergeChangesFromContextDidSaveNotification:notification];
+    }
 }
 
-- (void)applicationWillEnterForeground:(UIApplication *)application
-{
-    // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
+- (void)managedObjectContext2ObjectsDidChange:(NSNotification *)notification {
+    NSLog(@"managedObjectContext2ObjectsDidChange: %@", notification);
 }
 
-- (void)applicationDidBecomeActive:(UIApplication *)application
-{
-    // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-}
+@end
 
-- (void)applicationWillTerminate:(UIApplication *)application
-{
-    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
-}
+@implementation HJBFoo
+
+@dynamic name;
+@dynamic show;
 
 @end
