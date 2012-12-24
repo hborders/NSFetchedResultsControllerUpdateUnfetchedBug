@@ -178,6 +178,11 @@
     if (([managedObjectContext persistentStoreCoordinator] == self.persistentStoreCoordinator) &&
         (managedObjectContext != self.fetchedResultsControllerManagedObjectContext)) {
         NSLog(@"managedObjectContextDidSave: %@", notification);
+        
+        // Fix/workaround from http://stackoverflow.com/questions/3923826/nsfetchedresultscontroller-with-predicate-ignores-changes-merged-from-different/3927811#3927811
+        for(NSManagedObject *object in [[notification userInfo] objectForKey:NSUpdatedObjectsKey]) {
+            [[self.fetchedResultsControllerManagedObjectContext objectWithID:[object objectID]] willAccessValueForKey:nil];
+        }
         [self.fetchedResultsControllerManagedObjectContext mergeChangesFromContextDidSaveNotification:notification];
     }
 }
